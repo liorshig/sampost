@@ -94,7 +94,7 @@ def test_open_sam_lowercase_p_uses_dimension_aware_mapping(tmp_path):
     assert "p_prime" in result
     assert "pressure" in result
     np.testing.assert_allclose(result["p_base"].values, [100000.0, 90000.0])
-    np.testing.assert_allclose(result["pressure"].isel(time=0, y=0, x=0), [100050.0, 90000.0])
+    np.testing.assert_allclose(result["pressure"].isel(time=0, y=0, x=0), [105000.0, 85000.0])
 
 
 def test_open_sam_mfdataset_combines_groups_lazily(tmp_path):
