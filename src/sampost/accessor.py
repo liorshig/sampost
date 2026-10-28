@@ -12,6 +12,7 @@ from .thermo import (
     potential_temperature,
     virtual_potential_temperature,
 )
+from .turbulence import calculate_fluctuations, calculate_turbulent_fluxes
 
 
 def _require(ds: xr.Dataset, *names: str) -> None:
@@ -126,6 +127,26 @@ class SampostAccessor:
     def reynolds_decomposition(self, dims: tuple[str, str] = ("x", "y")) -> xr.Dataset:
         """Return fluctuations relative to horizontal slab means."""
         return self._ds - self.horizontal_mean(dims)
+
+    def fluctuations(self, mean: xr.Dataset) -> xr.Dataset:
+        """Return explicit mean fields and ``<name>_prime`` fluctuations."""
+        return calculate_fluctuations(self._ds, mean)
+
+    def turbulent_fluxes(
+        self,
+        mean: xr.Dataset,
+        *,
+        dims: tuple[str, ...] = ("x", "y"),
+        fields: tuple[str, ...] = (
+            "uw",
+            "vw",
+            "w_temp",
+            "w_qv",
+            "w_theta_v",
+        ),
+    ) -> xr.Dataset:
+        """Calculate selected turbulent fluxes from explicit mean fields."""
+        return calculate_turbulent_fluxes(self._ds, mean, dims=dims, fields=fields)
 
     def resolved_fluxes(self, dims: tuple[str, str] = ("x", "y")) -> xr.Dataset:
         """Calculate resolved ``w'q_v'`` and ``w'theta_v'`` fluxes."""

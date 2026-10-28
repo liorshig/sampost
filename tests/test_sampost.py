@@ -183,3 +183,74 @@ def test_dask_is_lazy():
     assert isinstance(result.data, da.Array)
     assert result.data.__dask_graph__() is not None
     assert result.data.npartitions == 4
+
+
+def test_explicit_mean_fluctuations_and_turbulent_fluxes():
+    ds = xr.Dataset(
+        {
+            "u": (("x", "y", "z"), [[[2.0], [4.0]], [[6.0], [8.0]]]),
+            "v": (("x", "y", "z"), [[[3.0], [5.0]], [[7.0], [9.0]]]),
+            "w": (("x", "y", "z"), [[[1.0], [2.0]], [[3.0], [4.0]]]),
+            "temp": (("x", "y", "z"), [[[300.0], [301.0]], [[302.0], [303.0]]]),
+            "q_v": (("x", "y", "z"), [[[0.01], [0.02]], [[0.03], [0.04]]]),
+            "pressure": (("x", "y", "z"), np.full((2, 2, 1), 100000.0)),
+        },
+        coords={"x": [0.0, 1.0], "y": [0.0, 1.0], "z": [0.0]},
+    )
+    mean = xr.Dataset(
+        {
+            name: (("z",), [value])
+            for name, value in {
+                "u": 5.0,
+                "v": 6.0,
+                "w": 2.5,
+                "temp": 301.5,
+                "q_v": 0.025,
+                "pressure": 100000.0,
+            }.items()
+        },
+        coords={"z": [0.0]},
+    )
+
+    fluctuations = ds.sampost.fluctuations(mean)
+    assert fluctuations["u"].identical(mean["u"])
+    assert "u_prime" in fluctuations
+    np.testing.assert_allclose(fluctuations["u_prime"], [[[-3.0], [-1.0]], [[1.0], [3.0]]])
+
+    fluxes = ds.sampost.turbulent_fluxes(
+        mean, fields=("uw", "vw", "w_temp", "w_qv", "w_theta_v")
+    )
+    assert set(fluxes.data_vars) == {
+        "uw_flux",
+        "vw_flux",
+        "w_temp_flux",
+        "w_qv_flux",
+        "w_theta_v_flux",
+    }
+    np.testing.assert_allclose(fluxes["uw_flux"], 2.5)
+    np.testing.assert_allclose(fluxes["vw_flux"], 2.5)
+    np.testing.assert_allclose(fluxes["w_temp_flux"], 1.25)
+    np.testing.assert_allclose(fluxes["w_qv_flux"], 0.0125)
+
+
+def test_turbulent_fluxes_align_staggered_w_and_validate_means():
+    ds = xr.Dataset(
+        {
+            "w": (("x", "y", "zW"), [[[0.0, 2.0, 4.0, 6.0]]]),
+            "temp": (("x", "y", "z"), [[[300.0, 301.0, 302.0]]]),
+        },
+        coords={"x": [0.0], "y": [0.0], "z": [0.0, 1.0, 2.0], "zW": [-0.5, 0.5, 1.5, 2.5]},
+    )
+    mean = xr.Dataset(
+        {
+            "w": ("zW", [0.0, 0.0, 0.0, 0.0]),
+            "temp": ("z", [299.0, 300.0, 301.0]),
+        },
+        coords={"z": ds.z, "zW": ds.zW},
+    )
+
+    flux = ds.sampost.turbulent_fluxes(mean, fields=("w_temp",))
+    np.testing.assert_allclose(flux["w_temp_flux"], [1.0, 3.0, 5.0])
+
+    with np.testing.assert_raises_regex(KeyError, "missing variables"):
+        ds.sampost.fluctuations(mean.drop_vars("temp"))

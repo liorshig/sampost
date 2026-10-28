@@ -11,6 +11,9 @@ ds = sampost.open_sam("snapshot.nc")
 theta_v = ds.sampost.virtual_potential_temperature()
 cloud = ds.sampost.cloud_mask(threshold=1e-5)
 fluxes = ds.sampost.resolved_fluxes()
+mean = ds.sampost.horizontal_mean()
+primes = ds.sampost.fluctuations(mean)
+turbulent_fluxes = ds.sampost.turbulent_fluxes(mean)
 cape_cin = ds.sampost.cape_cin()
 ```
 
@@ -73,3 +76,10 @@ horizontal Reynolds fluxes. `cape_cin()` currently documents a local-parcel
 virtual-potential-temperature convention and integrates buoyancy over height;
 it requires a height coordinate and should be treated as an initial diagnostic
 until a project-specific parcel specification is selected.
+
+`fluctuations(mean)` accepts an explicit mean Dataset, retains each mean field
+under its original name, and adds a corresponding `<name>_prime` field.
+`turbulent_fluxes(mean)` uses those explicit means to calculate
+`uw_flux`, `vw_flux`, `w_temp_flux`, `w_qv_flux`, and `w_theta_v_flux`, averaging
+the prime products over `x` and `y` by default. Pass `dims=()` to retain the
+unaveraged prime products.
