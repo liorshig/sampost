@@ -37,6 +37,24 @@ Opening SAM output
    ds = sampost.open_sam("snapshot.nc", chunks="auto")
    print(ds.data_vars)
 
+For separate kinematic and thermodynamic file groups, use the lazy combined
+loader. It is equivalent to opening two ``xarray.open_mfdataset`` collections
+and merging them, while applying Sampost standardization to each file:
+
+.. code-block:: python
+
+   ds = sampost.open_sam_mfdataset(
+       files_kinematic,
+       files_thermo,
+       chunks=chunk_dict,
+       parallel=True,
+       data_vars="minimal",
+   )
+
+Both ``open_sam`` and ``open_sam_mfdataset`` return Dask-backed arrays when
+chunks are enabled. Nothing is loaded until ``load()`` or ``compute()`` is
+called.
+
 The default dimensions are ``x``, ``y``, ``z``, and ``zW``. Use
 ``variable_map`` or ``dimension_map`` when a file uses different names.
 

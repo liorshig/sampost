@@ -12,10 +12,12 @@ GRAVITY = 9.80665
 
 
 def _unit(data: xr.DataArray, default: str) -> str:
+    """Return a DataArray unit attribute or its canonical default."""
     return str(data.attrs.get("units", default))
 
 
 def _magnitude(data: xr.DataArray, target: str) -> xr.DataArray:
+    """Convert a DataArray to target units without computing Dask data."""
     source = _unit(data, target)
     if source == target:
         return data
@@ -33,11 +35,13 @@ def _metpy_ufunc(
     input_units: tuple[str, ...],
     output_unit: str,
 ) -> xr.DataArray:
+    """Apply a unit-aware MetPy function through a lazy xarray ufunc."""
     magnitudes = [
         _magnitude(data, target) for data, target in zip(inputs, input_units, strict=True)
     ]
 
     def call(*values: np.ndarray) -> np.ndarray:
+        """Evaluate the MetPy function on one broadcast element."""
         quantities = [value * units(unit) for value, unit in zip(values, input_units, strict=True)]
         result = function(*quantities)
         return result.to(output_unit).magnitude
@@ -52,6 +56,19 @@ def _metpy_ufunc(
 
 
 def potential_temperature(pressure: xr.DataArray, temp: xr.DataArray) -> xr.DataArray:
+    """Calculate potential temperature using MetPy's Poisson relation.
+
+    Parameters
+    ----------
+    pressure, temp
+        Absolute pressure and air temperature. Sampost ingestion supplies Pa
+        and K, respectively.
+
+    Returns
+    -------
+    xarray.DataArray
+        Potential temperature in K, retaining xarray dimensions and laziness.
+    """
     result = _metpy_ufunc(
         calc.potential_temperature,
         pressure,
@@ -66,6 +83,7 @@ def potential_temperature(pressure: xr.DataArray, temp: xr.DataArray) -> xr.Data
 def virtual_potential_temperature(
     pressure: xr.DataArray, temp: xr.DataArray, q_v: xr.DataArray
 ) -> xr.DataArray:
+    """Calculate virtual potential temperature using MetPy."""
     result = _metpy_ufunc(
         calc.virtual_potential_temperature,
         pressure,
@@ -81,7 +99,9 @@ def virtual_potential_temperature(
 def equivalent_potential_temperature(
     pressure: xr.DataArray, temp: xr.DataArray, q_v: xr.DataArray
 ) -> xr.DataArray:
+    """Calculate equivalent potential temperature from vapor mixing ratio."""
     def call(p: np.ndarray, t: np.ndarray, mixing: np.ndarray) -> np.ndarray:
+        """Convert one element to Pint quantities and evaluate MetPy."""
         p_quantity = p * units.Pa
         t_quantity = t * units.K
         mixing_quantity = mixing * units.dimensionless
@@ -108,6 +128,12 @@ def liquid_water_potential_temperature(
     temp: xr.DataArray,
     q_c: xr.DataArray,
 ) -> xr.DataArray:
+    """Calculate liquid-water potential temperature for combined condensate.
+
+    MetPy does not expose this exact SAM condensate diagnostic as a public
+    function, so Sampost applies the standard constant-latent-heat wrapper
+    using MetPy's dry-air constants.
+    """
     theta = potential_temperature(pressure, temp)
     temperature = _magnitude(temp, "K")
     result = theta * np.exp(-Lv.to("J/kg").magnitude * q_c / (Cp_d.to("J/kg/K").magnitude * temperature))
@@ -121,6 +147,7 @@ def liquid_water_potential_temperature(
 def buoyancy(
     theta_v: xr.DataArray, reference_theta_v: xr.DataArray, gravity: float = GRAVITY
 ) -> xr.DataArray:
+    """Calculate buoyancy from parcel and reference virtual potential temperature."""
     result = gravity * (theta_v - reference_theta_v) / reference_theta_v
     result.name, result.attrs = "buoyancy", {"units": "m s-2", "long_name": "buoyancy"}
     return result

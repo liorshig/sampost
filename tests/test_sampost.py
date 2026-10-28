@@ -45,6 +45,96 @@ def test_open_sam_requires_units(tmp_path):
         sampost.open_sam(path, chunks=None)
 
 
+def test_open_sam_lowercase_p_uses_dimension_aware_mapping(tmp_path):
+    base = xr.Dataset(
+        {"p": (("z",), [1000.0, 900.0], {"units": "mbar"})},
+        coords={"z": [0.0, 1.0]},
+    )
+    base_path = tmp_path / "base.nc"
+    base.to_netcdf(base_path)
+    result = sampost.open_sam(base_path, chunks=None)
+    assert "p_base" in result
+    assert "pressure" not in result
+    assert result["p_base"].attrs["units"] == "Pa"
+    np.testing.assert_allclose(result["p_base"].values, [100000.0, 90000.0])
+
+    perturb = xr.Dataset(
+        {
+            "p": (
+                ("time", "z", "y", "x"),
+                np.full((1, 2, 1, 1), 50.0),
+                {"units": "mbar"},
+            )
+        },
+        coords={"time": [0.0], "z": [0.0, 1.0], "y": [0.0], "x": [0.0]},
+    )
+    full_path = tmp_path / "full.nc"
+    perturb.to_netcdf(full_path)
+    result = sampost.open_sam(full_path, chunks=None)
+    assert "pressure" in result
+    assert "p_base" not in result
+    assert result["pressure"].attrs["units"] == "Pa"
+    np.testing.assert_allclose(result["pressure"].values, 5000.0)
+
+    combined = xr.Dataset(
+        {
+            "P": (("z",), [1000.0, 900.0], {"units": "mbar"}),
+            "PP": (
+                ("time", "z", "y", "x"),
+                np.array([[[[50.0], [10.0]], [[-50.0], [-10.0]]]]),
+                {"units": "mbar"},
+            ),
+        },
+        coords={"z": [0.0, 1.0], "time": [0.0], "y": [0.0, 1.0], "x": [0.0]},
+    )
+    combined_path = tmp_path / "combined.nc"
+    combined.to_netcdf(combined_path)
+    result = sampost.open_sam(combined_path, chunks=None)
+    assert "p_base" in result
+    assert "p_prime" in result
+    assert "pressure" in result
+    np.testing.assert_allclose(result["p_base"].values, [100000.0, 90000.0])
+    np.testing.assert_allclose(result["pressure"].isel(time=0, y=0, x=0), [100050.0, 90000.0])
+
+
+def test_open_sam_mfdataset_combines_groups_lazily(tmp_path):
+    coords = {"time": [0.0], "z": [0.0, 1.0], "y": [0.0], "x": [0.0]}
+    kinematic = xr.Dataset(
+        {
+            "U": (("time", "z", "y", "x"), np.ones((1, 2, 1, 1)), {"units": "m/s"}),
+            "W": (("time", "z", "y", "x"), np.ones((1, 2, 1, 1)), {"units": "m/s"}),
+        },
+        coords=coords,
+    )
+    thermo = xr.Dataset(
+        {
+            "TABS": (
+                ("time", "z", "y", "x"),
+                np.full((1, 2, 1, 1), 300.0),
+                {"units": "K"},
+            ),
+            "QV": (
+                ("time", "z", "y", "x"),
+                np.full((1, 2, 1, 1), 0.01),
+                {"units": "kg/kg"},
+            ),
+        },
+        coords=coords,
+    )
+    kin_path = tmp_path / "kin.nc"
+    thermo_path = tmp_path / "thermo.nc"
+    kinematic.to_netcdf(kin_path)
+    thermo.to_netcdf(thermo_path)
+
+    result = sampost.open_sam_mfdataset(
+        [kin_path], [thermo_path], chunks={"time": 1}
+    )
+
+    assert set(result.data_vars) == {"u", "w", "temp", "q_v"}
+    assert isinstance(result["u"].data, da.Array)
+    assert isinstance(result["temp"].data, da.Array)
+
+
 def dataset():
     z = np.arange(3.0)
     zw = np.arange(4.0) - 0.5

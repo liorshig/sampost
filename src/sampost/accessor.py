@@ -15,6 +15,7 @@ from .thermo import (
 
 
 def _require(ds: xr.Dataset, *names: str) -> None:
+    """Raise a clear error if canonical variables are absent."""
     missing = [name for name in names if name not in ds]
     if missing:
         raise KeyError(f"Missing canonical SAM variables: {', '.join(missing)}")
@@ -34,28 +35,40 @@ class SampostAccessor:
     """Lazy diagnostics over a canonical Sampost Dataset."""
 
     def __init__(self, ds: xr.Dataset) -> None:
+        """Bind the accessor to an xarray Dataset."""
         self._ds = ds
 
     def potential_temperature(self) -> xr.DataArray:
+        """Return potential temperature in K."""
         _require(self._ds, "pressure", "temp")
         return potential_temperature(self._ds["pressure"], self._ds["temp"])
 
     def virtual_potential_temperature(self) -> xr.DataArray:
+        """Return virtual potential temperature in K."""
         _require(self._ds, "pressure", "temp", "q_v")
         return virtual_potential_temperature(self._ds["pressure"], self._ds["temp"], self._ds["q_v"])
 
     def equivalent_potential_temperature(self) -> xr.DataArray:
+        """Return equivalent potential temperature in K."""
         _require(self._ds, "pressure", "temp", "q_v")
         return equivalent_potential_temperature(self._ds["pressure"], self._ds["temp"], self._ds["q_v"])
 
     def liquid_water_potential_temperature(self) -> xr.DataArray:
+        """Return liquid-water potential temperature in K."""
         _require(self._ds, "pressure", "temp")
         return liquid_water_potential_temperature(
             self._ds["pressure"], self._ds["temp"], _condensate(self._ds)
         )
 
     def buoyancy(self, reference: xr.DataArray | None = None) -> xr.DataArray:
-        """Calculate buoyancy relative to a supplied or horizontal-mean state."""
+        """Calculate buoyancy relative to a supplied or horizontal-mean state.
+
+        Parameters
+        ----------
+        reference
+            Optional reference virtual potential temperature. If omitted, the
+            horizontal mean over ``x`` and ``y`` is used when available.
+        """
         theta_v = self.virtual_potential_temperature()
         if reference is None:
             reference = theta_v.mean(("x", "y")) if {"x", "y"} <= set(theta_v.dims) else theta_v
@@ -77,9 +90,11 @@ class SampostAccessor:
         return xr.Dataset({"cape": cape, "cin": cin})
 
     def cloud_mask(self, threshold: float = 1e-5) -> xr.DataArray:
+        """Return a boolean condensate mask using ``threshold`` in kg/kg."""
         return (_condensate(self._ds) > threshold).rename("cloud_mask")
 
     def lwp(self, vertical_dim: str = "z", density_name: str = "rho") -> xr.DataArray:
+        """Integrate condensate density to produce liquid water path."""
         _require(self._ds, vertical_dim, density_name)
         result = (_condensate(self._ds) * self._ds[density_name]).integrate(vertical_dim)
         result.name = "lwp"
@@ -87,6 +102,7 @@ class SampostAccessor:
         return result
 
     def total_water_path(self, vertical_dim: str = "z", density_name: str = "rho") -> xr.DataArray:
+        """Integrate vapor plus condensate density to produce total water path."""
         _require(self._ds, "q_v", density_name)
         result = ((self._ds["q_v"] + _condensate(self._ds)) * self._ds[density_name]).integrate(vertical_dim)
         result.name = "twp"
@@ -101,15 +117,18 @@ class SampostAccessor:
         return self._ds.where(mask).mean(dims, skipna=True)
 
     def horizontal_mean(self, dims: tuple[str, str] = ("x", "y")) -> xr.Dataset:
+        """Average all Dataset variables over horizontal dimensions."""
         missing = [dim for dim in dims if dim not in self._ds.dims]
         if missing:
             raise KeyError(f"Missing horizontal dimensions: {', '.join(missing)}")
         return self._ds.mean(dims)
 
     def reynolds_decomposition(self, dims: tuple[str, str] = ("x", "y")) -> xr.Dataset:
+        """Return fluctuations relative to horizontal slab means."""
         return self._ds - self.horizontal_mean(dims)
 
     def resolved_fluxes(self, dims: tuple[str, str] = ("x", "y")) -> xr.Dataset:
+        """Calculate resolved ``w'q_v'`` and ``w'theta_v'`` fluxes."""
         _require(self._ds, "w", "q_v")
         w = align_w_to_z(self._ds) if "zW" in self._ds["w"].dims else self._ds["w"]
         w_prime = w - w.mean(dims)
@@ -121,6 +140,7 @@ class SampostAccessor:
         return result
 
     def tke(self, dims: tuple[str, str] = ("x", "y")) -> xr.DataArray:
+        """Calculate resolved turbulent kinetic energy from velocity variance."""
         _require(self._ds, "u", "v", "w")
         components = []
         for name in ("u", "v", "w"):

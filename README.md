@@ -14,6 +14,22 @@ fluxes = ds.sampost.resolved_fluxes()
 cape_cin = ds.sampost.cape_cin()
 ```
 
+`open_sam` is lazy when called with `chunks="auto"` (the default). For
+separate SAM kinematic and thermodynamic file groups, use:
+
+```python
+ds = sampost.open_sam_mfdataset(
+    files_kinematic,
+    files_thermo,
+    chunks=chunk_dict,
+    parallel=True,
+    data_vars="minimal",
+)
+```
+
+This opens both groups lazily, applies canonical naming and SI conversion to
+each input file, and merges them without loading the data into memory.
+
 The canonical schema uses `temp`, `q_v`, `q_n`, `pressure`, `rho`, `w`, and
 coordinates/dimensions `x`, `y`, `z`, and `zW`. `open_sam` maps common names
 such as `TABL` and `QVBL`; custom maps can be supplied with `variable_map` and

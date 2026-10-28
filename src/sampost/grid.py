@@ -11,7 +11,22 @@ def interpolate_vertical(
     *,
     vertical_dim: str = "zW",
 ) -> xr.DataArray:
-    """Interpolate ``field`` onto a target vertical coordinate."""
+    """Interpolate a field onto a target vertical coordinate.
+
+    Parameters
+    ----------
+    field
+        DataArray containing the source vertical coordinate.
+    target
+        Coordinate DataArray or coordinate name on ``field``.
+    vertical_dim
+        Name of the source vertical dimension.
+
+    Returns
+    -------
+    xarray.DataArray
+        Interpolated field with the target coordinate values.
+    """
     source = field[vertical_dim]
     if source.ndim != 1:
         raise ValueError(f"{vertical_dim!r} must be one-dimensional")
@@ -25,7 +40,19 @@ def interpolate_vertical(
 
 
 def align_w_to_z(ds: xr.Dataset) -> xr.DataArray:
-    """Return vertical velocity interpolated from ``zW`` to ``z``."""
+    """Interpolate SAM vertical velocity from ``zW`` levels to ``z`` levels.
+
+    Parameters
+    ----------
+    ds
+        Dataset containing ``w`` on ``zW`` and a one-dimensional ``z``
+        coordinate.
+
+    Returns
+    -------
+    xarray.DataArray
+        ``w`` on the thermodynamic ``z`` grid.
+    """
     if "w" not in ds or "z" not in ds.coords or "zW" not in ds["w"].coords:
         raise ValueError("align_w_to_z requires w with zW and a z coordinate")
     result = ds["w"].interp({"zW": ds["z"]})
